@@ -4,10 +4,12 @@ def generate_summary(
     overall_metrics,
     product_contributors,
     regional_impact,
-    regional_assessment
+    regional_assessment,
 ):
+
     sales_change = overall_metrics["Sales_Change_pct"]
 
+    # Determine event type
     if sales_change <= -30:
         event_type = "Sales Drop"
     elif sales_change >= 30:
@@ -15,22 +17,40 @@ def generate_summary(
     else:
         event_type = "Sales Change"
 
+    # Calculate total sales loss
+    sales_loss = overall_metrics["Baseline_Sales"] - overall_metrics["Event_Sales"]
+
     summary = (
         f"Business Alert: {event_type}\n"
         f"Period: {start_date.date()} to {end_date.date()}\n"
         f"Sales changed by {sales_change:.1f}% compared with the baseline.\n"
+        f"Estimated sales loss: ₹{sales_loss:,.2f}\n"
     )
 
+    # Top 3 product contributors
     if product_contributors is not None and not product_contributors.empty:
-        top_product = product_contributors.iloc[0]["Product_Name"]
+
+        top_products = product_contributors.head(3)
+
+        summary += "\nTop product contributors:\n"
+
+        for _, row in top_products.iterrows():
+            summary += (
+                f"- {row['Product_Name']}: "
+                f"₹{row['Sales_Loss']:,.2f} loss "
+                f"({row['Loss_Contribution_pct']:.1f}%)\n"
+            )
+
+    # Most affected region
+    if regional_impact is not None and not regional_impact.empty:
+
+        top_region = regional_impact.iloc[0]
 
         summary += (
-            f"Main product contributor: {top_product}.\n"
+            f"\nMost affected region: {top_region['Region']} "
+            f"({top_region['Sales_Change_pct']:.1f}% change)\n"
         )
 
-    summary += (
-        f"Regional assessment: {regional_assessment}."
-    )
+    summary += f"Regional assessment: {regional_assessment}."
 
     return summary
-    
