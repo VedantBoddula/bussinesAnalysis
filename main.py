@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path 
 
 from src.data_loader import load_data
 from src.preprocessing import (
@@ -6,9 +6,13 @@ from src.preprocessing import (
     create_region_data,
     create_product_data
 )
-from src.anomaly_detector import detect_overall_sales_drops
+from src.anomaly_detector import (
+    detect_overall_sales_drops,
+    detect_overall_sales_spikes
+)
 from src.explainer import explain_event
 from src.summary_generator import generate_summary
+from src.email_alert import send_email_alert
 
 
 
@@ -53,6 +57,13 @@ daily_data, candidate_events = (
     detect_overall_sales_drops(daily_data)
 )
 
+daily_data, candidate_spikes = (
+    detect_overall_sales_spikes(daily_data)
+)
+
+print("\nCandidate spike events:")
+print(candidate_spikes)
+
 print("\nCandidate events:")
 print(candidate_events)
 
@@ -92,6 +103,16 @@ if not candidate_events.empty:
 
     print("\nBusiness Summary:")
     print(summary)
+
+    subject = (
+        f"Business Alert: Sales Drop | "
+        f"{start_date.date()} to {end_date.date()}"
+    )
+
+    send_email_alert(
+        subject=subject,
+        body=summary
+    )
 
 
     

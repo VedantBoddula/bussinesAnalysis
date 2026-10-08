@@ -1,8 +1,19 @@
+import os
 import smtplib
 from email.message import EmailMessage
 
+from dotenv import load_dotenv
 
-def send_email_alert(sender_email, app_password, receiver_email, subject, body):
+load_dotenv()
+
+
+def send_email_alert(subject, body):
+
+    sender_email = os.getenv("EMAIL_ADDRESS")
+    app_password = os.getenv("EMAIL_APP_PASSWORD")
+    receiver_email = os.getenv("RECEIVER_EMAIL")
+
+   
 
     message = EmailMessage()
 
@@ -12,8 +23,11 @@ def send_email_alert(sender_email, app_password, receiver_email, subject, body):
 
     message.set_content(body)
 
+    
+
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
         smtp.login(sender_email, app_password)
+       
         smtp.send_message(message)
 
-    print("Email alert sent successfully!")
+    
