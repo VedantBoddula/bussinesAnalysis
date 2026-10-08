@@ -8,6 +8,8 @@ from src.preprocessing import (
 )
 from src.anomaly_detector import detect_overall_sales_drops
 from src.explainer import explain_event
+from src.summary_generator import generate_summary
+
 
 
 # -------------------------
@@ -66,10 +68,10 @@ if not candidate_events.empty:
     start_date = first_event["Start_Date"]
     end_date = first_event["End_Date"]
 
-    (
+    (    
         overall_metrics,
-        product_explanation,
-        region_explanation,
+        loss_contributors,
+        event_regions,
         regional_assessment
     ) = explain_event(
         start_date,
@@ -79,33 +81,19 @@ if not candidate_events.empty:
         region_daily
     )
 
-    print("\nEvent:")
-    print(start_date, "to", end_date)
-
-    print("\nOverall metrics:")
-    print(overall_metrics)
-
-    print("\nTop product contributors:")
-    print(
-        product_explanation[
-            [
-                "Product_Name",
-                "Sales_Loss",
-                "Loss_Contribution_pct"
-            ]
-        ].head(10)
+    summary = generate_summary(
+        start_date,
+        end_date,
+        overall_metrics,
+        loss_contributors,
+        event_regions,
+        regional_assessment
     )
 
-    print("\nRegional impact:")
-    print(
-        region_explanation[
-            [
-                "Region",
-                "Sales_Change_pct",
-                "Sales_Loss"
-            ]
-        ]
-    )
+    print("\nBusiness Summary:")
+    print(summary)
 
-    print("\nAssessment:")
-    print(regional_assessment)
+
+    
+
+    
