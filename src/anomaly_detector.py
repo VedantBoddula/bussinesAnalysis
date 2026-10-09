@@ -138,3 +138,64 @@ def detect_category_sales_spikes(category_daily):
     )
 
     return category_daily, candidate_spikes
+
+
+
+def detect_product_sales_spikes(product_daily):
+    product_daily = product_daily.copy()
+
+    # Require a meaningful baseline and sales increase
+    product_daily["Is_Spike"] = (
+    (product_daily["Same_Day_4week_Avg"] >= 5000)
+    & (product_daily["Sales"] >= 15000)
+    & (product_daily["Quantity"] >= 3)
+    & (product_daily["Sales"] >=
+       product_daily["Same_Day_4week_Avg"] * 2)
+)
+
+    product_daily = product_daily.sort_values(
+        ["Product_Name", "Date"]
+    ).copy()
+
+    product_daily["Spike_Group"] = (
+        product_daily.groupby("Product_Name")["Is_Spike"]
+        .transform(lambda x: (x != x.shift()).cumsum())
+    )
+
+    spike_days = product_daily[product_daily["Is_Spike"]].copy()
+
+    columns = [
+        "Product_Name",
+        "Spike_Group",
+        "Start_Date",
+        "End_Date",
+        "Duration",
+        "Avg_Sales_Change",
+    ]
+
+    if spike_days.empty:
+        return product_daily, pd.DataFrame(columns=columns)
+
+    candidate_spikes = (
+        spike_days.groupby(["Product_Name", "Spike_Group"])
+        .agg(
+            Start_Date=("Date", "min"),
+            End_Date=("Date", "max"),
+            Duration=("Date", "count"),
+            Avg_Sales_Change=("Sales_Change_pct", "mean"),
+        )
+        .reset_index()
+    )
+
+    candidate_spikes = (
+        candidate_spikes.sort_values(
+            "Avg_Sales_Change", ascending=False
+        )
+        .reset_index(drop=True)
+    )
+
+    candidate_spikes = candidate_spikes[
+        candidate_spikes["Duration"] >= 2
+    ].copy()
+
+    return product_daily, candidate_spikes
