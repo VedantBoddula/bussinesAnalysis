@@ -141,28 +141,40 @@ def detect_category_sales_spikes(category_daily):
 
 
 
+
 def detect_product_sales_spikes(product_daily):
     product_daily = product_daily.copy()
 
-    # Require a meaningful baseline and sales increase
+    # Require meaningful sales and quantity baselines
     product_daily["Is_Spike"] = (
-    (product_daily["Same_Day_4week_Avg"] >= 5000)
-    & (product_daily["Sales"] >= 15000)
-    & (product_daily["Quantity"] >= 3)
-    & (product_daily["Sales"] >=
-       product_daily["Same_Day_4week_Avg"] * 2)
-)
+        (product_daily["Same_Day_4week_Avg"] >= 5000)
+        & (product_daily["Sales"] >= 15000)
+        & (product_daily["Quantity"] >= 3)
+        & (
+            product_daily["Sales"]
+            >= product_daily["Same_Day_4week_Avg"] * 2
+        )
+        & (product_daily["Quantity_4week_Avg"] > 0)
+        & (
+            product_daily["Quantity"]
+            >= product_daily["Quantity_4week_Avg"] * 1.5
+        )
+    )
 
+    # Sort by product and date
     product_daily = product_daily.sort_values(
         ["Product_Name", "Date"]
     ).copy()
 
+    # Group consecutive spike days for each product
     product_daily["Spike_Group"] = (
         product_daily.groupby("Product_Name")["Is_Spike"]
         .transform(lambda x: (x != x.shift()).cumsum())
     )
 
-    spike_days = product_daily[product_daily["Is_Spike"]].copy()
+    spike_days = product_daily[
+        product_daily["Is_Spike"]
+    ].copy()
 
     columns = [
         "Product_Name",
@@ -176,6 +188,7 @@ def detect_product_sales_spikes(product_daily):
     if spike_days.empty:
         return product_daily, pd.DataFrame(columns=columns)
 
+    # Combine consecutive spike days into events
     candidate_spikes = (
         spike_days.groupby(["Product_Name", "Spike_Group"])
         .agg(
@@ -187,16 +200,16 @@ def detect_product_sales_spikes(product_daily):
         .reset_index()
     )
 
-    candidate_spikes = (
-        candidate_spikes.sort_values(
-            "Avg_Sales_Change", ascending=False
-        )
-        .reset_index(drop=True)
-    )
-
+    # Keep events lasting at least two days
     candidate_spikes = candidate_spikes[
         candidate_spikes["Duration"] >= 2
     ].copy()
+
+    candidate_spikes = (
+        candidate_spikes.sort_values(
+            "Avg_Sales_Change", ascending=False
+        ).reset_index(drop=True)
+    )
 
     return product_daily, candidate_spikes
 

@@ -168,6 +168,22 @@ def create_product_data(data):
         / product_daily["Same_Day_4week_Avg"]
     ) * 100
 
+        # Same product + same weekday, previous 4 weeks
+    product_daily["Quantity_4week_Avg"] = (
+        product_daily
+        .groupby(["Product_Name", "Day"])["Quantity"]
+        .transform(lambda x: x.shift(1).rolling(4).mean())
+    )
+
+    # Compare actual quantity with its historical baseline
+    product_daily["Quantity_Change_pct"] = (
+        (
+            product_daily["Quantity"]
+            - product_daily["Quantity_4week_Avg"]
+        )
+        / product_daily["Quantity_4week_Avg"].replace(0, float("nan"))
+    ) * 100
+
     return product_daily
 
 

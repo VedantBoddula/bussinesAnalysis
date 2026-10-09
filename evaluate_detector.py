@@ -21,6 +21,9 @@ data = load_data(file_path)
 ground_truth = pd.read_excel(file_path, sheet_name="Ground_Truth")
 
 
+print("Ground-truth columns:", ground_truth.columns.tolist())
+
+
 daily_data = create_daily_data(data)
 category_daily = create_category_data(data)
 
@@ -337,51 +340,138 @@ _, candidate_drops = detect_overall_sales_drops(daily_data)
 _, candidate_spikes = detect_overall_sales_spikes(daily_data)
 _, category_spikes = detect_category_sales_spikes(category_daily)
 
+print("\n========== OVERALL SALES DROP CANDIDATES ==========")
+print(candidate_drops.to_string(index=False))
+
 
 def overlaps(start1, end1, start2, end2):
     return start1 <= end2 and start2 <= end1
 
 
+
 def evaluate_events(known, detected, detector_name, allowed_types):
     print(f"\n========== {detector_name} ==========")
 
-    relevant = known[known["Anomaly_Type"].isin(allowed_types)]
-    matched_ids = set()
+    relevant = known[
+        known["Anomaly_Type"].isin(allowed_types)
+    ].copy()
 
+    detected = detected.copy().reset_index(drop=True)
+
+    # Normalize dates for reliable comparisons
+    for col in ["Start_Date", "End_Date"]:
+        relevant[col] = pd.to_datetime(relevant[col])
+        detected[col] = pd.to_datetime(detected[col])
+
+    
+    matched_detected_indices = set()
+
+    true_positives = 0
+
+    # Match each known event to at most one detected event
     for _, event in relevant.iterrows():
-        matches = detected[
-            detected.apply(
-                lambda row: overlaps(
-                    pd.Timestamp(event["Start_Date"]),
-                    pd.Timestamp(event["End_Date"]),
-                    pd.Timestamp(row["Start_Date"]),
-                    pd.Timestamp(row["End_Date"]),
-                ),
-                axis=1,
-            )
-        ]
+        matches = []
 
-        if "Category" in detected.columns:
-            if pd.notna(event["Affected_Category"]) and event["Affected_Category"] != "All":
-                matches = matches[matches["Category"] == event["Affected_Category"]]
+        for idx, row in detected.iterrows():
+            if idx in matched_detected_indices:
+                continue
 
-        if not matches.empty:
-            matched_ids.add(event["Anomaly_ID"])
-            print(f"MATCH: {event['Anomaly_ID']} - {event['Anomaly_Type']}")
+            if not overlaps(
+                event["Start_Date"],
+                event["End_Date"],
+                row["Start_Date"],
+                row["End_Date"],
+            ):
+                continue
+
+            # Match category when the known event specifies one
+            if "Category" in detected.columns:
+                category = event.get("Affected_Category")
+
+                if (
+                    pd.notna(category)
+                    and category != "All"
+                    and row["Category"] != category
+                ):
+                    continue
+
+            # Match product when the known event specifies one
+            if "Product_Name" in detected.columns:
+                product = event.get("Affected_Product")
+
+                if (
+                    pd.notna(product)
+                    and product != "All"
+                    and row["Product_Name"] != product
+                ):
+                    continue
+
+            matches.append((idx, row))
+
+        if matches:
+            # Prefer the detected event with the greatest date overlap
+            def overlap_days(match):
+                _, row = match
+                start = max(event["Start_Date"], row["Start_Date"])
+                end = min(event["End_Date"], row["End_Date"])
+                return (end - start).days + 1
+
+            idx, row = max(matches, key=overlap_days)
+
+            matched_detected_indices.add(idx)
+            true_positives += 1
+
             print(
-                f"  Known dates: {event['Start_Date']} to {event['End_Date']}"
+                f"MATCH: {event['Anomaly_ID']} - "
+                f"{event['Anomaly_Type']}"
             )
             print(
-                f"  Detected dates: "
-                f"{matches[['Start_Date', 'End_Date']].to_dict('records')}"
+                f"  Known dates: {event['Start_Date'].date()} "
+                f"to {event['End_Date'].date()}"
+            )
+            print(
+                f"  Detected dates: {row['Start_Date'].date()} "
+                f"to {row['End_Date'].date()}"
             )
         else:
-            print(f"MISSED: {event['Anomaly_ID']} - {event['Anomaly_Type']}")
+            print(
+                f"MISSED: {event['Anomaly_ID']} - "
+                f"{event['Anomaly_Type']}"
+            )
 
-    print(f"\nKnown events in scope: {len(relevant)}")
-    print(f"Known events matched: {len(matched_ids)}")
-    print(f"Known events missed: {len(relevant) - len(matched_ids)}")
+    # Unmatched detections count as false positives
+    false_positives = (
+        len(detected) - len(matched_detected_indices)
+    )
+    false_negatives = len(relevant) - true_positives
 
+    precision = (
+        true_positives / (true_positives + false_positives)
+        if true_positives + false_positives > 0
+        else 0.0
+    )
+
+    recall = (
+        true_positives / (true_positives + false_negatives)
+        if true_positives + false_negatives > 0
+        else 0.0
+    )
+
+    f1_score = (
+        2 * precision * recall / (precision + recall)
+        if precision + recall > 0
+        else 0.0
+    )
+
+    print("\n---------- EVALUATION SUMMARY ----------")
+    print(f"Known events in scope : {len(relevant)}")
+    print(f"Detected events       : {len(detected)}")
+    print(f"True positives        : {true_positives}")
+    print(f"False positives       : {false_positives}")
+    print(f"False negatives       : {false_negatives}")
+    print(f"Precision             : {precision:.2%}")
+    print(f"Recall                : {recall:.2%}")
+    print(f"F1-score              : {f1_score:.2%}")
 
 evaluate_events(
     ground_truth,
@@ -397,12 +487,15 @@ evaluate_events(
     ["Unusual Sales Spike"],
 )
 
+
 evaluate_events(
     ground_truth,
-    category_spikes,
-    "CATEGORY SALES SPIKES",
+    product_spikes,
+    "PRODUCT SALES SPIKES",
     ["Product Sales Spike"],
 )
+
+
 
 
 evaluate_events(
@@ -418,7 +511,6 @@ evaluate_events(
 
 
 print("\n========== PRODUCT SALES DISTRIBUTION ==========")
-
 sold_days = product_daily[product_daily["Sales"] > 0].copy()
 
 product_stats = (
