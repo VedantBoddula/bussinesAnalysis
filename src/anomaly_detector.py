@@ -53,25 +53,23 @@ def detect_overall_sales_spikes(daily_data):
 
     daily_data = daily_data.copy()
 
-    # A day is considered a soft spike signal if
-    # either Sales OR Quantity rises by 30% or more
+    
+    # A spike requires a meaningful sales increase
+    # and no significant decline in quantity
     daily_data["Overall_Spike_Signal_Soft"] = (
         (daily_data["Sales_Change_pct"] >= 30)
-        |
-        (daily_data["Quantity_Change_pct"] >= 30)
+        & (daily_data["Quantity_Change_pct"] >= 0)
     )
 
-    # Create groups of consecutive spike days
+    # Group consecutive spike days
     daily_data["Soft_Spike_Group"] = (
         daily_data["Overall_Spike_Signal_Soft"]
         != daily_data["Overall_Spike_Signal_Soft"].shift()
     ).cumsum()
 
-        # Aggregate consecutive spike days into candidate events
+    # Aggregate candidate events
     candidate_spikes = (
-        daily_data[
-            daily_data["Overall_Spike_Signal_Soft"]
-        ]
+        daily_data[daily_data["Overall_Spike_Signal_Soft"]]
         .groupby("Soft_Spike_Group")
         .agg(
             Start_Date=("Date", "min"),
@@ -80,22 +78,19 @@ def detect_overall_sales_spikes(daily_data):
             Avg_Sales_Change=("Sales_Change_pct", "mean"),
             Avg_Quantity_Change=("Quantity_Change_pct", "mean")
         )
-        .sort_values(
-            ["Duration", "Start_Date"],
-            ascending=[False, True]
-        )
     )
 
-    # Keep events lasting at least 3 days
-    # with average sales increase of at least 30%
+    # Require at least two days and positive average changes
     candidate_spikes = candidate_spikes[
         (candidate_spikes["Duration"] >= 2)
-        &
-        (candidate_spikes["Avg_Sales_Change"] >= 30)
-    ].copy()
+        & (candidate_spikes["Avg_Sales_Change"] >= 30)
+        & (candidate_spikes["Avg_Quantity_Change"] > 0)
+    ].sort_values(
+        ["Duration", "Start_Date"],
+        ascending=[False, True]
+    )
 
     return daily_data, candidate_spikes
-
 
 def detect_category_sales_spikes(category_daily):
 
@@ -138,12 +133,8 @@ def detect_category_sales_spikes(category_daily):
     candidate_spikes = candidate_spikes[
         candidate_spikes["Duration"] >= 2
     ].sort_values(
-        "Avg_Sales_Change", ascending=False
+        by=["Duration", "Avg_Sales_Change"],
+        ascending=[False, False]
     )
-
-    candidate_spikes = candidate_spikes.sort_values(
-    by=["Duration", "Avg_Sales_Change"],
-    ascending=[False, False]
-)
 
     return category_daily, candidate_spikes

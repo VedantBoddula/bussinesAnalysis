@@ -40,6 +40,14 @@ data = load_data(file_path)
 print("Data loaded successfully!")
 print("Rows:", len(data))
 
+ground_truth = pd.read_excel(
+    file_path,
+    sheet_name="Ground_Truth"
+)
+
+print("\nGround Truth:")
+print(ground_truth.to_string(index=False))
+
 
 # -------------------------
 # 2. Prepare datasets
@@ -49,65 +57,7 @@ daily_data = create_daily_data(data)
 region_daily = create_region_data(data)
 product_daily = create_product_data(data)
 category_daily = create_category_data(data)
-# Inspect known spike event A005
 
-check_dates = pd.to_datetime(["2024-07-14", "2024-07-15"])
-
-print("\nA005 Spike Investigation:")
-print(
-daily_data.loc[
-daily_data["Date"].isin(check_dates),
-[
-"Date",
-"Sales",
-"Sales_4week_Avg",
-"Sales_Change_pct",
-"Quantity",
-"Quantity_4week_Avg",
-"Quantity_Change_pct"
-]
-].to_string(index=False)
-)
-
-
-
-# Investigate A005 at the Sports category level
-sports_data = data[
-    (data["Category"] == "Sports")
-    & (data["Date"].between("2024-07-10", "2024-07-18"))
-]
-
-sports_daily = (
-    sports_data.groupby("Date")
-    .agg(
-        Sales=("Sales", "sum"),
-        Quantity=("Quantity", "sum"),
-        Orders=("Order_ID", "count")
-    )
-    .reset_index()
-)
-
-print("\nA005 Sports Category Investigation:")
-print(sports_daily.to_string(index=False))
-
-
-# Investigate individual Sports products during A005
-sports_product_data = data[
-    (data["Category"] == "Sports")
-    & (data["Date"].between("2024-07-10", "2024-07-18"))
-]
-
-print("\nA005 Sports Product Investigation:")
-print(
-    sports_product_data.groupby(["Date", "Product_Name"])
-    .agg(
-        Sales=("Sales", "sum"),
-        Quantity=("Quantity", "sum")
-    )
-    .reset_index()
-    .sort_values(["Date", "Sales"], ascending=[True, False])
-    .to_string(index=False)
-)
 
 print("Daily data:", daily_data.shape)
 print("Region data:", region_daily.shape)
@@ -200,7 +150,7 @@ if not category_spikes.empty:
         subject=subject,
         body=category_summary
     )
-    
+
 print("\nCandidate spike events:")
 print(candidate_spikes)
 
