@@ -96,3 +96,54 @@ def detect_overall_sales_spikes(daily_data):
 
     return daily_data, candidate_spikes
 
+
+def detect_category_sales_spikes(category_daily):
+
+    category_daily = category_daily.copy()
+
+    # Flag unusually high sales or quantity
+    category_daily["Spike_Signal"] = (
+        (category_daily["Sales_Change_pct"] >= 50)
+        & (category_daily["Quantity_Change_pct"] >= 30)
+        & (category_daily["Same_Day_4week_Avg"] >= 5000)
+        & (category_daily["Quantity_4week_Avg"] >= 3)
+)
+
+    # Group consecutive spike days separately for each category
+    category_daily = category_daily.sort_values(
+        ["Category", "Date"]
+    ).copy()
+
+    category_daily["Spike_Group"] = (
+        category_daily.groupby("Category")["Spike_Signal"]
+        .transform(
+            lambda x: (x != x.shift()).cumsum()
+        )
+    )
+
+    candidate_spikes = (
+        category_daily[category_daily["Spike_Signal"]]
+        .groupby(["Category", "Spike_Group"])
+        .agg(
+            Start_Date=("Date", "min"),
+            End_Date=("Date", "max"),
+            Duration=("Date", "count"),
+            Avg_Sales_Change=("Sales_Change_pct", "mean"),
+            Avg_Quantity_Change=("Quantity_Change_pct", "mean")
+        )
+        .reset_index()
+    )
+
+    # Require at least two consecutive days
+    candidate_spikes = candidate_spikes[
+        candidate_spikes["Duration"] >= 2
+    ].sort_values(
+        "Avg_Sales_Change", ascending=False
+    )
+
+    candidate_spikes = candidate_spikes.sort_values(
+    by=["Duration", "Avg_Sales_Change"],
+    ascending=[False, False]
+)
+
+    return category_daily, candidate_spikes
