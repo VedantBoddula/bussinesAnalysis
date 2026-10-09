@@ -199,3 +199,63 @@ def detect_product_sales_spikes(product_daily):
     ].copy()
 
     return product_daily, candidate_spikes
+
+
+
+def detect_profit_margin_drops(category_daily):
+
+    category_daily = category_daily.copy()
+
+    # Flag days where margin drops by at least 5 percentage points
+    category_daily["Is_Margin_Drop"] = (
+        (category_daily["Sales"] >= 3000)
+        & (category_daily["Profit_Margin_4week_Avg"] >= 5)
+        & (category_daily["Margin_Drop_pp"] <= -5)
+    )
+
+    category_daily = category_daily.sort_values(
+        ["Category", "Date"]
+    ).copy()
+
+    # Group consecutive flagged days within each category
+    category_daily["Margin_Group"] = (
+        category_daily.groupby("Category")["Is_Margin_Drop"]
+        .transform(lambda x: (x != x.shift()).cumsum())
+    )
+
+    margin_days = category_daily[
+        category_daily["Is_Margin_Drop"]
+    ].copy()
+
+    columns = [
+        "Category",
+        "Start_Date",
+        "End_Date",
+        "Duration",
+        "Avg_Margin_Drop_pp"
+    ]
+
+    if margin_days.empty:
+        return category_daily, pd.DataFrame(columns=columns)
+
+    candidate_events = (
+        margin_days.groupby(["Category", "Margin_Group"])
+        .agg(
+            Start_Date=("Date", "min"),
+            End_Date=("Date", "max"),
+            Duration=("Date", "count"),
+            Avg_Margin_Drop_pp=("Margin_Drop_pp", "mean")
+        )
+        .reset_index()
+    )
+
+    # Keep events lasting at least 2 consecutive days
+    candidate_events = candidate_events[
+        candidate_events["Duration"] >= 2
+    ].copy()
+
+    candidate_events = candidate_events.sort_values(
+        "Avg_Margin_Drop_pp"
+    ).reset_index(drop=True)
+
+    return category_daily, candidate_events

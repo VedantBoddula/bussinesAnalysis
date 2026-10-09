@@ -52,6 +52,9 @@ def create_daily_data(data):
         / daily_data["Profit_4week_Avg"]
     ) * 100
 
+    
+    
+
     return daily_data
 
 
@@ -236,5 +239,27 @@ def create_category_data(data):
         )
         / category_daily["Quantity_4week_Avg"]
     ) * 100
+
+
+
+    
+    # Calculate daily profit margin
+    category_daily["Profit_Margin_pct"] = (
+        category_daily["Profit"]
+        / category_daily["Sales"].replace(0, float("nan"))
+    ) * 100
+
+    # Same category + same weekday, previous 4 weeks
+    category_daily["Profit_Margin_4week_Avg"] = (
+        category_daily
+        .groupby(["Category", "Day"])["Profit_Margin_pct"]
+        .transform(lambda x: x.shift(1).rolling(4).mean())
+    )
+
+    # Margin change in percentage points
+    category_daily["Margin_Drop_pp"] = (
+        category_daily["Profit_Margin_pct"]
+        - category_daily["Profit_Margin_4week_Avg"]
+    )
 
     return category_daily

@@ -1,6 +1,7 @@
 
 from pathlib import Path
 
+
 import pandas as pd
 
 from src.data_loader import load_data
@@ -9,7 +10,8 @@ from src.anomaly_detector import (
     detect_overall_sales_drops,
     detect_overall_sales_spikes,
     detect_category_sales_spikes,
-    detect_product_sales_spikes
+    detect_product_sales_spikes,
+    detect_profit_margin_drops,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -22,8 +24,61 @@ ground_truth = pd.read_excel(file_path, sheet_name="Ground_Truth")
 daily_data = create_daily_data(data)
 category_daily = create_category_data(data)
 
+
+category_margin_data, margin_events = detect_profit_margin_drops(
+    category_daily.copy()
+)
+
+print("\n========== PROFIT MARGIN DROP EVENTS ==========")
+print("Total candidate events:", len(margin_events))
+print(margin_events.to_string(index=False))
+
+print("\n========== PROFIT MARGIN CHECK ==========")
+
+print(
+    category_margin_data[
+        [
+            "Date",
+            "Category",
+            "Sales",
+            "Profit",
+            "Profit_Margin_pct",
+            "Profit_Margin_4week_Avg",
+            "Margin_Drop_pp"
+        ]
+    ].tail(15).to_string(index=False)
+)
+
+
+
+
+print("\n========== INVESTIGATE A010 ==========")
+
+a010 = category_margin_data[
+    (category_margin_data["Category"] == "Home & Kitchen")
+    & (category_margin_data["Date"] >= "2025-03-01")
+    & (category_margin_data["Date"] <= "2025-03-07")
+]
+
+print(
+    a010[
+        [
+            "Date",
+            "Category",
+            "Sales",
+            "Profit",
+            "Profit_Margin_pct",
+            "Profit_Margin_4week_Avg",
+            "Margin_Drop_pp",
+        ]
+    ].to_string(index=False)
+)
+
 # Detect product-level sales spikes
 product_daily = create_product_data(data)
+
+
+
 
 
 
@@ -347,6 +402,17 @@ evaluate_events(
     category_spikes,
     "CATEGORY SALES SPIKES",
     ["Product Sales Spike"],
+)
+
+
+evaluate_events(
+    ground_truth,
+    margin_events,
+    "PROFIT MARGIN DROPS",
+    [
+        "Profit Margin Drop",
+        "Margin Problem (Sales Up, Profit Down)",
+    ],
 )
 
 
