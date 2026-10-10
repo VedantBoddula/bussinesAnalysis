@@ -18,13 +18,29 @@ def generate_summary(
         event_type = "Sales Change"
 
     # Calculate total sales loss
-    sales_loss = overall_metrics["Baseline_Sales"] - overall_metrics["Event_Sales"]
+    
+    sales_difference = (
+        overall_metrics["Event_Sales"]
+        - overall_metrics["Baseline_Sales"]
+    )
+
+    if sales_difference < 0:
+        impact_text = (
+            f"Estimated sales loss: ₹{abs(sales_difference):,.2f}"
+        )
+    elif sales_difference > 0:
+        impact_text = (
+            f"Estimated additional sales: ₹{sales_difference:,.2f}"
+        )
+    else:
+        impact_text = "Sales were equal to the baseline."
+
 
     summary = (
         f"Business Alert: {event_type}\n"
         f"Period: {start_date.date()} to {end_date.date()}\n"
         f"Sales changed by {sales_change:.1f}% compared with the baseline.\n"
-        f"Estimated sales loss: ₹{sales_loss:,.2f}\n"
+        f"{impact_text}\n"
     )
 
     # Top 3 product contributors
