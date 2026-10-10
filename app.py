@@ -3,6 +3,22 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
+from src.preprocessing import (
+    create_daily_data,
+    create_region_data,
+    create_product_data,
+    create_category_data
+)
+
+from src.anomaly_detector import (
+    detect_overall_sales_drops,
+    detect_overall_sales_spikes,
+    detect_category_sales_spikes,
+    detect_product_sales_spikes,
+    detect_profit_margin_drops,
+    detect_regional_sales_drops
+)
+
 # Page configuration
 st.set_page_config(
     page_title="Business Metrics Monitor",
@@ -37,7 +53,12 @@ st.caption(
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Go to",
-    ["Overview", "Sales Analytics", "Alert History"]
+    [
+        "Overview",
+        "Sales Analytics",
+        "Anomaly Detection",
+        "Alert History"
+    ]
 )
 
 # Load transaction data
@@ -155,6 +176,121 @@ elif page == "Sales Analytics":
 
     with st.expander("View transaction data"):
         st.dataframe(filtered_df, use_container_width=True)
+
+
+
+# Anomaly Detection page
+elif page == "Anomaly Detection":
+    st.subheader("Anomaly Detection")
+    st.caption(
+        "Identify unusual business activity using historical sales patterns."
+    )
+
+    with st.spinner("Analyzing business data..."):
+        daily_data = create_daily_data(df)
+        region_daily = create_region_data(df)
+        product_daily = create_product_data(df)
+        category_daily = create_category_data(df)
+
+        _, sales_drops = detect_overall_sales_drops(daily_data)
+        _, sales_spikes = detect_overall_sales_spikes(daily_data)
+        _, category_spikes = detect_category_sales_spikes(category_daily)
+        _, product_spikes = detect_product_sales_spikes(product_daily)
+        _, margin_drops = detect_profit_margin_drops(category_daily)
+        _, regional_drops = detect_regional_sales_drops(region_daily)
+
+    events = []
+
+    def add_events(data, anomaly_type, scope_column=None):
+        for _, event in data.iterrows():
+            row = {
+                "Anomaly Type": anomaly_type,
+                "Start Date": pd.to_datetime(event["Start_Date"]),
+                "End Date": pd.to_datetime(event["End_Date"]),
+                "Duration (days)": int(event["Duration"]),
+                "Scope": (
+                    str(event[scope_column])
+                    if scope_column and scope_column in event.index
+                    else "Overall Business"
+                )
+            }
+
+            if "Avg_Sales_Change" in event.index:
+                row["Sales Change (%)"] = round(
+                    event["Avg_Sales_Change"], 1
+                )
+
+            if "Avg_Quantity_Change" in event.index:
+                row["Quantity Change (%)"] = round(
+                    event["Avg_Quantity_Change"], 1
+                )
+
+            if "Avg_Margin_Drop_pp" in event.index:
+                row["Margin Drop (pp)"] = round(
+                    event["Avg_Margin_Drop_pp"], 1
+                )
+
+            events.append(row)
+
+    add_events(sales_drops, "Overall Sales Drop")
+    add_events(sales_spikes, "Overall Sales Spike")
+    add_events(category_spikes, "Category Sales Spike", "Category")
+    add_events(product_spikes, "Product Sales Spike", "Product_Name")
+    add_events(margin_drops, "Profit Margin Drop", "Category")
+    add_events(regional_drops, "Regional Sales Drop", "Region")
+
+    if not events:
+        st.success("No anomalies were detected with the current rules.")
+    else:
+        results = pd.DataFrame(events).sort_values(
+            "Start Date", ascending=False
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.metric("Detected Events", len(results))
+
+        with col2:
+            st.metric(
+                "Anomaly Types",
+                results["Anomaly Type"].nunique()
+            )
+
+        st.divider()
+
+        anomaly_types = ["All"] + sorted(
+            results["Anomaly Type"].unique().tolist()
+        )
+
+        selected_anomaly = st.selectbox(
+            "Filter by anomaly type",
+            anomaly_types
+        )
+
+        filtered_results = results.copy()
+
+        if selected_anomaly != "All":
+            filtered_results = filtered_results[
+                filtered_results["Anomaly Type"] == selected_anomaly
+            ]
+
+        st.caption(f"Showing {len(filtered_results)} detected event(s)")
+
+        st.dataframe(
+            filtered_results,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        with st.expander("How does anomaly detection work?"):
+            st.write(
+                "The monitor compares business metrics with historical "
+                "baselines and applies the detection rules defined in "
+                "the anomaly detector module. Detected events are "
+                "candidates for investigation, not proof of a business problem."
+            )
+
 
 # Alert History page
 
