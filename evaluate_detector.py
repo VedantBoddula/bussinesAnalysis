@@ -5,13 +5,14 @@ from pathlib import Path
 import pandas as pd
 
 from src.data_loader import load_data
-from src.preprocessing import create_daily_data, create_category_data, create_product_data
+from src.preprocessing import create_daily_data, create_category_data, create_product_data, create_region_data
 from src.anomaly_detector import (
     detect_overall_sales_drops,
     detect_overall_sales_spikes,
     detect_category_sales_spikes,
     detect_product_sales_spikes,
     detect_profit_margin_drops,
+    detect_regional_sales_drops
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -26,6 +27,13 @@ print("Ground-truth columns:", ground_truth.columns.tolist())
 
 daily_data = create_daily_data(data)
 category_daily = create_category_data(data)
+region_daily = create_region_data(data)
+
+print("\nRegional data columns:")
+print(region_daily.columns.tolist())
+print(region_daily.head())
+
+
 
 
 category_margin_data, margin_events = detect_profit_margin_drops(
@@ -339,6 +347,56 @@ print(
 _, candidate_drops = detect_overall_sales_drops(daily_data)
 _, candidate_spikes = detect_overall_sales_spikes(daily_data)
 _, category_spikes = detect_category_sales_spikes(category_daily)
+_, regional_drops = detect_regional_sales_drops(region_daily)
+
+
+
+print("\nA007 exact-date check:")
+
+a007_check = region_daily[
+    (region_daily["Region"] == "South")
+    & (region_daily["Date"] >= "2024-10-05")
+    & (region_daily["Date"] <= "2024-10-07")
+].copy()
+
+print(
+    a007_check[
+        [
+            "Date",
+            "Sales",
+            "Same_Day_4week_Avg",
+            "Same_Day_Change_pct"
+        ]
+    ].to_string(index=False)
+)
+
+
+
+
+
+print("\n========== REGIONAL DETECTOR DIAGNOSTICS ==========")
+
+print("Candidate event count:", len(regional_drops))
+
+print("\nLargest regional drops:")
+print(
+    regional_drops[
+        ["Region", "Start_Date", "End_Date", "Duration", "Avg_Sales_Change"]
+    ].head(15).to_string(index=False)
+)
+
+print("\nA007 South investigation:")
+south_check = region_daily[
+    (region_daily["Region"] == "South")
+    & (region_daily["Date"] >= "2024-09-28")
+    & (region_daily["Date"] <= "2024-10-12")
+]
+
+print(
+    south_check[
+        ["Date", "Region", "Sales", "Same_Day_4week_Avg", "Same_Day_Change_pct"]
+    ].to_string(index=False)
+)
 
 print("\n========== OVERALL SALES DROP CANDIDATES ==========")
 print(candidate_drops.to_string(index=False))
@@ -346,6 +404,7 @@ print(candidate_drops.to_string(index=False))
 
 def overlaps(start1, end1, start2, end2):
     return start1 <= end2 and start2 <= end1
+
 
 
 
@@ -358,33 +417,39 @@ def evaluate_events(known, detected, detector_name, allowed_types):
 
     detected = detected.copy().reset_index(drop=True)
 
-    # Normalize dates for reliable comparisons
     for col in ["Start_Date", "End_Date"]:
         relevant[col] = pd.to_datetime(relevant[col])
         detected[col] = pd.to_datetime(detected[col])
 
-    
     matched_detected_indices = set()
-
     true_positives = 0
 
-    # Match each known event to at most one detected event
+    def calculate_overlap(event, row):
+        start = max(event["Start_Date"], row["Start_Date"])
+        end = min(event["End_Date"], row["End_Date"])
+
+        if start > end:
+            return 0
+
+        return (end - start).days + 1
+
     for _, event in relevant.iterrows():
+        known_duration = (
+            event["End_Date"] - event["Start_Date"]
+        ).days + 1
+
         matches = []
 
         for idx, row in detected.iterrows():
             if idx in matched_detected_indices:
                 continue
 
-            if not overlaps(
-                event["Start_Date"],
-                event["End_Date"],
-                row["Start_Date"],
-                row["End_Date"],
-            ):
+            overlap = calculate_overlap(event, row)
+
+            if overlap == 0:
                 continue
 
-            # Match category when the known event specifies one
+            # Check the affected category when available.
             if "Category" in detected.columns:
                 category = event.get("Affected_Category")
 
@@ -395,7 +460,7 @@ def evaluate_events(known, detected, detector_name, allowed_types):
                 ):
                     continue
 
-            # Match product when the known event specifies one
+            # Check the affected product when available.
             if "Product_Name" in detected.columns:
                 product = event.get("Affected_Product")
 
@@ -406,40 +471,65 @@ def evaluate_events(known, detected, detector_name, allowed_types):
                 ):
                     continue
 
-            matches.append((idx, row))
+
+                
+            # Check the affected region when available.
+            if "Region" in detected.columns:
+                region = event.get("Affected_Region")
+
+                if (
+                    pd.notna(region)
+                    and region != "All"
+                    and row["Region"] != region
+                ):
+                    continue
+
+
+            overlap_ratio = overlap / known_duration
+
+            # Require at least 50% of the known event's
+            # duration to overlap the detected event.
+            if overlap_ratio >= 0.50:
+                matches.append((idx, row, overlap, overlap_ratio))
 
         if matches:
-            # Prefer the detected event with the greatest date overlap
-            def overlap_days(match):
-                _, row = match
-                start = max(event["Start_Date"], row["Start_Date"])
-                end = min(event["End_Date"], row["End_Date"])
-                return (end - start).days + 1
-
-            idx, row = max(matches, key=overlap_days)
+            idx, row, days_overlap, overlap_ratio = max(
+                matches,
+                key=lambda match: (
+                    match[3],
+                    match[2],
+                ),
+            )
 
             matched_detected_indices.add(idx)
             true_positives += 1
 
             print(
-                f"MATCH: {event['Anomaly_ID']} - "
+                f"\nMATCH: {event['Anomaly_ID']} - "
                 f"{event['Anomaly_Type']}"
             )
             print(
-                f"  Known dates: {event['Start_Date'].date()} "
-                f"to {event['End_Date'].date()}"
+                f"  Known dates: "
+                f"{event['Start_Date'].date()} to "
+                f"{event['End_Date'].date()}"
             )
             print(
-                f"  Detected dates: {row['Start_Date'].date()} "
-                f"to {row['End_Date'].date()}"
+                f"  Detected dates: "
+                f"{row['Start_Date'].date()} to "
+                f"{row['End_Date'].date()}"
             )
+            print(
+                f"  Overlapping days: {days_overlap}/"
+                f"{known_duration} "
+                f"({overlap_ratio:.1%})"
+            )
+
         else:
             print(
-                f"MISSED: {event['Anomaly_ID']} - "
+                f"\nMISSED: {event['Anomaly_ID']} - "
                 f"{event['Anomaly_Type']}"
             )
 
-    # Unmatched detections count as false positives
     false_positives = (
         len(detected) - len(matched_detected_indices)
     )
@@ -487,12 +577,27 @@ evaluate_events(
     ["Unusual Sales Spike"],
 )
 
+evaluate_events(
+    ground_truth,
+    category_spikes,
+    "CATEGORY SALES SPIKES",
+    ["Unusual Sales Spike"],
+)
+
 
 evaluate_events(
     ground_truth,
     product_spikes,
     "PRODUCT SALES SPIKES",
     ["Product Sales Spike"],
+)
+
+
+evaluate_events(
+    ground_truth,
+    regional_drops,
+    "REGIONAL SALES DROPS",
+    ["Regional Sales Drop"]
 )
 
 

@@ -179,7 +179,7 @@ def detect_product_sales_spikes(product_daily):
     columns = [
         "Product_Name",
         "Spike_Group",
-        "Start_Date",
+        "Start_Date",   
         "End_Date",
         "Duration",
         "Avg_Sales_Change",
@@ -272,3 +272,52 @@ def detect_profit_margin_drops(category_daily):
     ).reset_index(drop=True)
 
     return category_daily, candidate_events
+
+
+def detect_regional_sales_drops(region_daily):
+
+    region_daily = region_daily.copy()
+
+    # Flag significant regional sales declines
+    region_daily["Regional_Drop_Signal"] = (
+        region_daily["Same_Day_Change_pct"] <= -30
+    )
+
+    # Group consecutive flagged days separately for each region
+    region_daily = region_daily.sort_values(
+        ["Region", "Date"]
+    ).copy()
+
+    region_daily["Drop_Group"] = (
+        region_daily.groupby("Region")["Regional_Drop_Signal"]
+        .transform(lambda x: (x != x.shift()).cumsum())
+    )
+
+    # Aggregate consecutive drop days into candidate events
+    candidate_events = (
+        region_daily[region_daily["Regional_Drop_Signal"]]
+        .groupby(["Region", "Drop_Group"])
+        .agg(
+            Start_Date=("Date", "min"),
+            End_Date=("Date", "max"),
+            Duration=("Date", "count"),
+            Avg_Sales_Change=("Same_Day_Change_pct", "mean")
+        )
+        .reset_index()
+    )
+
+    # Keep declines lasting at least two days
+    candidate_events = candidate_events[
+        candidate_events["Duration"] >= 2
+    ].copy()
+
+    candidate_events = candidate_events.sort_values(
+        ["Duration", "Avg_Sales_Change"],
+        ascending=[False, True]
+    ).reset_index(drop=True)
+
+    return region_daily, candidate_events
+
+
+
+
