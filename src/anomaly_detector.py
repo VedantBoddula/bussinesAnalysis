@@ -274,26 +274,33 @@ def detect_profit_margin_drops(category_daily):
     return category_daily, candidate_events
 
 
+
+
+
 def detect_regional_sales_drops(region_daily):
-
     region_daily = region_daily.copy()
-
-    # Flag significant regional sales declines
-    region_daily["Regional_Drop_Signal"] = (
-        region_daily["Same_Day_Change_pct"] <= -30
-    )
-
-    # Group consecutive flagged days separately for each region
     region_daily = region_daily.sort_values(
         ["Region", "Date"]
     ).copy()
+
+    # Measure the average sales change over a 3-day window
+    region_daily["Rolling_3day_Change_pct"] = (
+        region_daily.groupby("Region")["Same_Day_Change_pct"]
+        .transform(lambda x: x.rolling(3, min_periods=3).mean())
+    )
+
+    # Require a meaningful historical baseline and current sales
+    region_daily["Regional_Drop_Signal"] = (
+        (region_daily["Rolling_3day_Change_pct"] <= -30)
+        & (region_daily["Same_Day_4week_Avg"] >= 5000)
+        & (region_daily["Sales"] >= 3000)
+    )
 
     region_daily["Drop_Group"] = (
         region_daily.groupby("Region")["Regional_Drop_Signal"]
         .transform(lambda x: (x != x.shift()).cumsum())
     )
 
-    # Aggregate consecutive drop days into candidate events
     candidate_events = (
         region_daily[region_daily["Regional_Drop_Signal"]]
         .groupby(["Region", "Drop_Group"])
@@ -301,23 +308,19 @@ def detect_regional_sales_drops(region_daily):
             Start_Date=("Date", "min"),
             End_Date=("Date", "max"),
             Duration=("Date", "count"),
-            Avg_Sales_Change=("Same_Day_Change_pct", "mean")
+            Avg_Sales_Change=("Rolling_3day_Change_pct", "mean"),
         )
         .reset_index()
     )
 
-    # Keep declines lasting at least two days
     candidate_events = candidate_events[
         candidate_events["Duration"] >= 2
     ].copy()
 
     candidate_events = candidate_events.sort_values(
         ["Duration", "Avg_Sales_Change"],
-        ascending=[False, True]
+        ascending=[False, True],
     ).reset_index(drop=True)
 
     return region_daily, candidate_events
-
-
-
 

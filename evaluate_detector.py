@@ -398,6 +398,34 @@ print(
     ].to_string(index=False)
 )
 
+
+
+print("\n========== CHECK ALL KNOWN REGIONAL EVENTS ==========")
+
+for region, start_date, end_date in [
+    ("West", "2024-03-05", "2024-03-08"),   # A002
+    ("South", "2024-10-05", "2024-10-07"), # A007
+    ("East", "2025-07-07", "2025-07-08"),  # A012
+]:
+    print(f"\n{region}: {start_date} to {end_date}")
+
+    check = region_daily[
+        (region_daily["Region"] == region)
+        & (region_daily["Date"] >= start_date)
+        & (region_daily["Date"] <= end_date)
+    ]
+
+    print(check[
+        [
+            "Date",
+            "Region",
+            "Sales",
+            "Same_Day_4week_Avg",
+            "Same_Day_Change_pct",
+        ]
+    ].to_string(index=False))
+
+
 print("\n========== OVERALL SALES DROP CANDIDATES ==========")
 print(candidate_drops.to_string(index=False))
 
