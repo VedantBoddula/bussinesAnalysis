@@ -19,7 +19,7 @@ from src.summary_generator import (
     generate_summary,
     generate_category_spike_summary,
 )
-from src.email_alert import send_email_alert
+from src.alert_history import initialize_alert_history, send_alert_once
 
 
 
@@ -28,6 +28,7 @@ from src.email_alert import send_email_alert
 # -------------------------
 
 BASE_DIR = Path(__file__).resolve().parent
+initialize_alert_history()
 
 file_path = (
     BASE_DIR
@@ -146,11 +147,19 @@ if not category_spikes.empty:
         f"{start_date.date()} to {end_date.date()}"
     )
 
-    send_email_alert(
-        subject=subject,
-        body=category_summary
-    )
+    alert_key = (
+    f"category_spike_{category_name}_"
+    f"{start_date.date()}_{end_date.date()}"
+)
 
+    send_alert_once(
+        alert_key=alert_key,
+        alert_type="Category Sales Spike",
+        start_date=start_date,
+        end_date=end_date,
+        subject=subject,
+        summary=category_summary,
+    )
 print("\nCandidate spike events:")
 print(candidate_spikes)
 
@@ -199,9 +208,18 @@ if not candidate_events.empty:
         f"{start_date.date()} to {end_date.date()}"
     )
 
-    send_email_alert(
+    alert_key = (
+    f"overall_sales_drop_"
+    f"{start_date.date()}_{end_date.date()}"
+)
+
+    send_alert_once(
+        alert_key=alert_key,
+        alert_type="Overall Sales Drop",
+        start_date=start_date,
+        end_date=end_date,
         subject=subject,
-        body=summary
+        summary=summary,
     )
 
     
